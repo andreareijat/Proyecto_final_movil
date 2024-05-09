@@ -41,7 +41,7 @@ class Robot:
         self.p = pose
         self.range = range
         self.type = type
-        self.dt = 0.25;
+        self.dt = 0.25
         self.Q = Q * self.dt
         self.R = R / self.dt
         self.objs = []      # obs is a list containing the observed
@@ -50,7 +50,8 @@ class Robot:
         self.v = 0.5
         self.ti = 8
         self.tf = 5 * self.ti
-        
+
+   
     # This method populates the field 'obs' (observed landmarks) given
     # the map 'm' passed as an argument. The vectors contained in the
     # list will be Cartesian coordiantes or range and bearing
@@ -136,7 +137,7 @@ class EnvPlot:
             self.ax.plot(p[0], p[1], marker='*', color='b')
             
         # Draw the estimate of the Kalman filter
-        f = 3.0;
+        f = 3.0
         S = kf.Pk_k[0:3,0:3]
         pearson = S[0, 1]/np.sqrt(S[0, 0] * S[1, 1])
         # Using a special case to obtain the eigenvalues of this
