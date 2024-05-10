@@ -1,20 +1,22 @@
 import numpy as np
 from Simulator import Landmark, Map, Robot, EnvPlot
-from scipy.stats import chi2
 
-noLandmarks = 17
+# Create a map with random landmarks
+noLandmarks = 25
 m = Map()
 for i in range(noLandmarks):
     p = np.array([np.random.uniform(-5,5), np.random.uniform(-5,5)], np.float32)
     m.append(Landmark(p, i))
 
+# Create an object to plot the environment (map), robot and estimate
 e = EnvPlot()
 
 # Set the state and measurement noise covariance
-Q = np.array([[0.25**2, 0],[0, 0.25**2]], np.float32) #covarianza del ruido de estado (ROBOT)
-R = np.array([[0.2**2, 0],[0, 0.2**2]], np.float32) #covarianza del ruido de medida (LANDMARKS)
+Q = np.array([[0.25**2, 0],[0, 0.25**2]], np.float32)
+R = np.array([[0.2**2, 0],[0, 0.2**2]], np.float32)
 
-# Create the robot object, by default measures the Cartesian coordinates of the landmarks in the environment
+# Create the robot object, by default measures the Cartesian
+# coordinates of the landmarks in the environment
 r = Robot(np.array([2,-2], np.float32), Q, R)
 
 class KF:
@@ -28,155 +30,77 @@ class KF:
         self.map = m
         self.A = np.eye(len(self.xk_k))
         self.B = self.dt * np.eye(len(self.xk_k))
-        self.H = None #Jacobiana
-        self.S = None #Covarianza
         pass
 
-
-    def add_landmarks(self,measurements):
-        
-        for measure in measurements:    
-            self.xk_k.append(measure)
-        
-
-    """
-    Cada observación real yk+1 se compara con la observación predicha y^k+1
-    para determinar a qué landmark conocido podría corresponder cada observación. 
-    """
-    def association(self, measurements, predicted_observations): 
-
-        threshold = chi2.ppf(0.99, df=2) 
-        associations = [-1] * len(measurements)
-        
-
-        for i, measurement in enumerate(measurements): 
-            dm_squared = float('inf')
-            
-            for j, predicted_observation in enumerate(predicted_observations):
-                # d_squared = (measurement.p-predicted_observation).T@np.linalg.inv(jacobiana@self.Pk_k@jacobiana.T + self.R)@(measurement.p-predicted_observation)
-                d_squared = np.linalg.norm(measurement - predicted_observation)
-             
-                #Si la distancia es menor a la minima actual
-                if d_squared < dm_squared and d_squared < threshold:
-                    dm_squared = d_squared
-                    jm = j
-                    associations[i] = j
-
-        return associations
     
-
-
     """
-    Calcula las observaciones predichas de todos los landmarks que se encuentre
-    dentro del campo visual del robot (measurements) a partir del estado
-    predicho del robot.
-    landmarks = [[lx1, ly1],[lx2, ly2],...]
-    """
-    def predict_observations(self):
-        
-        predicted_observations = []
-
-        robot_position = self.xk_k[:2]
-
-        for l in self.map:
-            d = l - robot_position
-            predicted_observations.append(d)
-
-        return predicted_observations
-
-
-
-    """
-    xk+1
     Predice solo la posición del robot y su covarianza.
-    No afecta a los landmarks
+    No afecta a los landmarks.
     """
     def predict(self, u):
             self.xk_k[:2] = self.A[:2,:2]@self.xk_k[:2] + self.B[:2,:2]@u
             self.Pk_k = self.A[:2,:2]@self.Pk_k[:2,:2]@self.A[:2,:2].T + self.Q
+    
 
+    def update(self, y):
+        pass
 
 
     """
-    Actualiza la posicion del robot, la de los landmarks
-    y sus respectivas covarianzas basándose en la ganancia
-    de Kalman
+    Agrega nuevos landmarks al mapa basándose en las mediciones
+    actuales. Los añade con el mismo id del landmark detectado.
     """
-    def update(self, y, a): 
+    def add_landmarks(self,measurements):
 
-        for idx, observation in enumerate(y): 
+        for measure in measurements: 
 
-            #Si hay una asociacion valida
-            if a[idx] != -1: 
-                
-                predicted_observation = self.predict_observations()[idx]
-                innovation = observation - predicted_observation
+            global_position = self.transform_to_global(measure)
+            new_landmark = Landmark(global_position, measure.id)
+            self.xk_k = np.append(self.xk_k, new_landmark)    
+    
+    """
+    Transforma una posición relativa a una global basada en la posición 
+    del robot
+    """
+    def transform_to_global(self, measure): 
         
-                # Jacobiana de la observación
-                H = np.tile([[-1, 0], [0, -1]], (1, 1))  
-                I = np.eye(2)
-                
-                # Cálculo de la matriz S
-                S = H @ self.Pk_k @ H.T + self.R
+        x,y = self.xk_k[:2]
+        dx, dy = measure.p
+        
+        global_x = x + dx
+        global_y = y + dy
 
-                # Ganancia de Kalman
-                K = self.Pk_k @ H.T @ np.linalg.inv(S)
+        return np.array([global_x, global_y], dtype=np.float32)
+    
 
-                # Actualización del estado y la covarianza
-                self.xk_k[:2] = self.xk_k[:2] + (K @ innovation)
-                self.Pk_k = self.Pk_k - K@S@K.T
-
-            else:
-                self.add_landmarks(observation)
-
-
+    """
+    """
+    def do_association(self, measurements):
+        pass
+        
 
 # Initial estimates of the position of the error and its covariance matrix
 xHat = np.array([0, 0], np.float32)
-PHat = np.array([[3,0],[0,3]], np.float32) 
+PHat = np.array([[3,0],[0,3]], np.float32)
 
-kf = KF(xHat, PHat, 0.01*Q,  R, m)
+# Object for the (Extended) Kalman filter estimator
+kf = KF(xHat, PHat, Q,  R, m)
 
+# Plot the first step of the estimation process and pause
 e.plotSim(r, m, kf, True)
 
-measurements = r.measure(m) 
+measurements = r.measure(m)
 kf.add_landmarks(measurements)
-print(kf.x)
-# while r.t < r.tf:
 
-# for i in range(3):
+while r.t < r.tf:
+    # print("Measurements: ", measurements)
+    print("Estado: ", kf.xk_k)
+    u = r.action()
+    kf.predict(u)
+    measurements = r.measure(m)
+    associations = kf.do_association(measurements)
+#     kf.update(y)
 
-#     #print info
-#     print('#############')
-#     print("Estado del robot: \n", kf.xk_k)
-#     print('Covarianza del robot: \n', kf.Pk_k)
-
-#     u = r.action()
-#     kf.predict(u)
-
-#     measurements = r.measure(m) 
-#     print("Medidas: ", measurements)
-#     predicted_observations = kf.predict_observations()
-
-#     #comprobar en base a que sistema de referencia se hacen las dos cosas
-#     a = kf.association(measurements, predicted_observations)
-
-#     kf.update(measurements,a) 
-
-#     e.plotSim(r, m, kf)
-
-
-"""
-Ahora mismo realiza las asociaciones pero no ejecuta correctamente el update.
-Esta sin implementar la funcion de add_landmarks en caso de no existir asociación.
-
-El motivo principal es la duda que tengo, 
-El robot debería de tener un mapa interno que se inicialice a cero? De esta forma las 
-predicted_landmarks se hacen solo de la posición predicha del robot a cada una de las
-landmarks del mapa interno del robot?
-
-O se deben emplear igualmente todos los landmarks del mapa completo? Es que así el robot
-ya "conocería" todo el mapa y no iria creando uno nuevo no?
-"""
-
-
+    kf.add_landmarks(measurements)
+    
+    e.plotSim(r, m, kf)
