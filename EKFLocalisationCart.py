@@ -33,8 +33,10 @@ class KF:
         pass
 
 
-    def add_landmarks(self,l):
-        pass
+    def add_landmarks(self,measurements):
+        
+        for measure in measurements:    
+            self.xk_k.append(measure)
         
 
     """
@@ -65,7 +67,8 @@ class KF:
 
 
     """
-    Calcula las observaciones predichas de todos los landmarks a partir del estado
+    Calcula las observaciones predichas de todos los landmarks que se encuentre
+    dentro del campo visual del robot (measurements) a partir del estado
     predicho del robot.
     landmarks = [[lx1, ly1],[lx2, ly2],...]
     """
@@ -136,22 +139,31 @@ kf = KF(xHat, PHat, 0.01*Q,  R, m)
 
 e.plotSim(r, m, kf, True)
 
-#estoy en Xk|k
+measurements = r.measure(m) 
+kf.add_landmarks(measurements)
+print(kf.x)
+# while r.t < r.tf:
 
-while r.t < r.tf:
+# for i in range(3):
 
-    u = r.action()
-    kf.predict(u)
+#     #print info
+#     print('#############')
+#     print("Estado del robot: \n", kf.xk_k)
+#     print('Covarianza del robot: \n', kf.Pk_k)
 
-    measurements = r.measure(m) 
-    predicted_observations = kf.predict_observations()
+#     u = r.action()
+#     kf.predict(u)
 
-    #comprobar en base a que sistema de referencia se hacen las dos cosas
-    a = kf.association(measurements, predicted_observations)
+#     measurements = r.measure(m) 
+#     print("Medidas: ", measurements)
+#     predicted_observations = kf.predict_observations()
 
-    kf.update(measurements,a) 
+#     #comprobar en base a que sistema de referencia se hacen las dos cosas
+#     a = kf.association(measurements, predicted_observations)
 
-    e.plotSim(r, m, kf)
+#     kf.update(measurements,a) 
+
+#     e.plotSim(r, m, kf)
 
 
 """
