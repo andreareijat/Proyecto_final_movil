@@ -1,8 +1,8 @@
 import numpy as np
 from Simulator import Landmark, Map, Robot, EnvPlot
-
+import time
 # Create a map with random landmarks
-noLandmarks = 25
+noLandmarks = 15
 m = Map()
 for i in range(noLandmarks):
     p = np.array([np.random.uniform(-5,5), np.random.uniform(-5,5)], np.float32)
@@ -50,13 +50,30 @@ class KF:
     Agrega nuevos landmarks al mapa basándose en las mediciones
     actuales. Los añade con el mismo id del landmark detectado.
     """
-    def add_landmarks(self,measurements):
+    def add_landmarks(self,measurements, associations):
 
-        for measure in measurements: 
+        for measure, assoc in zip(measurements, associations): 
 
-            global_position = self.transform_to_global(measure)
-            new_landmark = Landmark(global_position, measure.id)
-            self.xk_k = np.append(self.xk_k, new_landmark)    
+            if assoc is None: 
+                #se añade un nuevo landmark
+                global_position = self.transform_to_global(measure)
+                new_landmark = Landmark(global_position, measure.id)
+                self.xk_k = np.append(self.xk_k, new_landmark)    
+
+                #Añadir covarianza de las mediciones
+                #la incertidumbre inicial de las landmarks debe ser inf
+                #definimos un valor alto
+                # new_landmark_covariance = np.array([[1, 0], [0, 1]]) * 5  
+                # self.Pk_k = np.append(self.Pk_k, new_landmark_covariance)
+            
+            else: 
+                pass
+                #TODO: se deberia actualizar el landmark existente con el ID asociado?
+                # for landmark in self.xk_k:
+                #     if landmark.id == assoc:
+                #         landmark.update_position(measure.p)  # Función para actualizar la posición del landmark
+                #         break
+    
     
     """
     Transforma una posición relativa a una global basada en la posición 
@@ -74,14 +91,36 @@ class KF:
     
 
     """
+    Asocia cada medición con el identificador de un landmark del 
+    mapa del robot. 
+    Se basa en la distancia mínima entre la medida y los landmarks.
+    Si la distancia mínima es menor que un umbral se asocia, de lo 
+    contrario se asocia a None.
     """
     def do_association(self, measurements):
-        pass
+        associations = []
+        
+        for measure in measurements:
+            dists = []
+            for i in range(len(self.xk_k[2:])):
+                landmark = self.xk_k[2 + i]
+                dist = np.linalg.norm(landmark.p - self.transform_to_global(measure)) 
+                dists.append((dist, landmark.id))
+        
+            min_dist, min_id = min(dists, key=lambda x: x[0]) 
+            dists = []
+
+            if min_dist < 0.5:
+                associations.append(min_id)
+            else:
+                associations.append(None)
+
+        return associations
         
 
 # Initial estimates of the position of the error and its covariance matrix
 xHat = np.array([0, 0], np.float32)
-PHat = np.array([[3,0],[0,3]], np.float32)
+PHat = np.array([[0,0],[0,0]], np.float32) #la incertidumbre en la posicion inicial del robot es nula
 
 # Object for the (Extended) Kalman filter estimator
 kf = KF(xHat, PHat, Q,  R, m)
@@ -90,17 +129,19 @@ kf = KF(xHat, PHat, Q,  R, m)
 e.plotSim(r, m, kf, True)
 
 measurements = r.measure(m)
-kf.add_landmarks(measurements)
+associations = [None] * len(measurements)
+kf.add_landmarks(measurements, associations)
 
 while r.t < r.tf:
-    # print("Measurements: ", measurements)
-    print("Estado: ", kf.xk_k)
+
     u = r.action()
     kf.predict(u)
     measurements = r.measure(m)
     associations = kf.do_association(measurements)
+    # print("Asociaciones: \n", associations)
 #     kf.update(y)
 
-    kf.add_landmarks(measurements)
+    kf.add_landmarks(measurements, associations) #TODO: SE ESTAN AÑADIENDO TODA LAS LADNMARKS SIEMPRE, AÑADIR SOLO NO ASOCIADAS?
     
     e.plotSim(r, m, kf)
+    time.sleep(3)
