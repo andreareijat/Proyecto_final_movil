@@ -30,6 +30,7 @@ class KF:
         self.map = m
         self.A = np.eye(len(self.xk_k))
         self.B = self.dt * np.eye(len(self.xk_k))
+        self.landmark_ids = []
         pass
 
     
@@ -39,8 +40,8 @@ class KF:
     """
     def predict(self, u):
             self.xk_k[:2] = self.A[:2,:2]@self.xk_k[:2] + self.B[:2,:2]@u
-            self.Pk_k = self.A[:2,:2]@self.Pk_k[:2,:2]@self.A[:2,:2].T + self.Q
-    
+            self.Pk_k[:2,:2] = self.A[:2,:2]@self.Pk_k[:2,:2]@self.A[:2,:2].T + self.Q
+            print("PK: ", kf.Pk_k)
 
     def update(self, y):
         pass
@@ -54,26 +55,28 @@ class KF:
 
         for measure, assoc in zip(measurements, associations): 
 
-            if assoc is None: 
+            if assoc is None and (measure.id not in self.landmark_ids): 
+
                 #se añade un nuevo landmark
                 global_position = self.transform_to_global(measure)
                 new_landmark = Landmark(global_position, measure.id)
+                self.landmark_ids.append(measure.id)
                 self.xk_k = np.append(self.xk_k, new_landmark)    
 
                 #Añadir covarianza de las mediciones
-                #la incertidumbre inicial de las landmarks debe ser inf
-                #definimos un valor alto
-                # new_landmark_covariance = np.array([[1, 0], [0, 1]]) * 5  
-                # self.Pk_k = np.append(self.Pk_k, new_landmark_covariance)
-            
-            else: 
-                pass
-                #TODO: se deberia actualizar el landmark existente con el ID asociado?
-                # for landmark in self.xk_k:
-                #     if landmark.id == assoc:
-                #         landmark.update_position(measure.p)  # Función para actualizar la posición del landmark
-                #         break
-    
+                #incertidumbre inicial de las landmarks debe ser inf
+                #(definimos un valor alto)
+                f = self.Pk_k.shape[0]
+                c = self.Pk_k.shape[1]
+
+                result = np.zeros((2+f, 2+c))
+                result[:f, :c] = self.Pk_k
+                
+                identity_matrix = np.eye(2) * 10000
+                result[f:, c:] = identity_matrix
+
+                self.Pk_k = result
+
     
     """
     Transforma una posición relativa a una global basada en la posición 
@@ -141,7 +144,7 @@ while r.t < r.tf:
     # print("Asociaciones: \n", associations)
 #     kf.update(y)
 
-    kf.add_landmarks(measurements, associations) #TODO: SE ESTAN AÑADIENDO TODA LAS LADNMARKS SIEMPRE, AÑADIR SOLO NO ASOCIADAS?
+    kf.add_landmarks(measurements, associations)
     
     e.plotSim(r, m, kf)
-    time.sleep(3)
+    # time.sleep(3)
