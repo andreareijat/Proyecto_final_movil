@@ -56,6 +56,7 @@ class KF:
         for measure, assoc in zip(measurements, associations): 
 
             if assoc is None and (measure.id not in self.landmark_ids): 
+
                 #se añade un nuevo landmark
                 global_position = self.transform_to_global(measure)
                 new_landmark = Landmark(global_position, measure.id)
@@ -63,23 +64,19 @@ class KF:
                 self.xk_k = np.append(self.xk_k, new_landmark)    
 
                 #Añadir covarianza de las mediciones
-                #la incertidumbre inicial de las landmarks debe ser inf
-                #definimos un valor alto
-                new_cov = np.eye(2) * 1000 #alta incertidumbre inicial
-                self.Pk_k = np.block([
-                    [self.Pk_k, np.zeros((self.Pk_k.shape[0], 2))],
-                    [np.zeros((2, self.Pk_k.shape[1])), new_cov]
-                ])
+                #incertidumbre inicial de las landmarks debe ser inf
+                #(definimos un valor alto)
+                f = self.Pk_k.shape[0]
+                c = self.Pk_k.shape[1]
+
+                result = np.zeros((2+f, 2+c))
+                result[:f, :c] = self.Pk_k
                 
-                # self.Pk_k=self.Pk_k
-            else: 
-                pass
-                #TODO: se deberia actualizar el landmark existente con el ID asociado?
-                # for landmark in self.xk_k:
-                #     if landmark.id == assoc:
-                #         landmark.update_position(measure.p)  # Función para actualizar la posición del landmark
-                #         break
-    
+                identity_matrix = np.eye(2) * 10000
+                result[f:, c:] = identity_matrix
+
+                self.Pk_k = result
+
     
     """
     Transforma una posición relativa a una global basada en la posición 
@@ -147,7 +144,7 @@ while r.t < r.tf:
     # print("Asociaciones: \n", associations)
 #     kf.update(y)
 
-    kf.add_landmarks(measurements, associations) #TODO: SE ESTAN AÑADIENDO TODA LAS LADNMARKS SIEMPRE, AÑADIR SOLO NO ASOCIADAS?
+    kf.add_landmarks(measurements, associations)
     
     e.plotSim(r, m, kf)
     # time.sleep(3)
