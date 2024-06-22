@@ -2,7 +2,7 @@ import numpy as np
 from Simulator import Landmark, Map, Robot, EnvPlot
 import time
 # Create a map with random landmarks
-noLandmarks = 15
+noLandmarks = 20
 m = Map()
 for i in range(noLandmarks):
     p = np.array([np.random.uniform(-5,5), np.random.uniform(-5,5)], np.float32)
@@ -41,12 +41,72 @@ class KF:
     def predict(self, u):
             self.xk_k[:2] = self.A[:2,:2]@self.xk_k[:2] + self.B[:2,:2]@u
             self.Pk_k[:2,:2] = self.A[:2,:2]@self.Pk_k[:2,:2]@self.A[:2,:2].T + self.Q
-            print("PK: ", kf.Pk_k)
-
-    def update(self, y):
-        pass
 
 
+    def find_landmark_in_map(self, idx):
+
+        for landmark in self.xk_k[2:]:
+            if landmark.id == idx: 
+                return landmark
+
+
+    def update(self, measurements, associations):
+        print("UPDATE")
+        innovation_errors = []
+
+        for i, measure in enumerate(measurements):
+            if associations[i] is not None: 
+                print("Hay asociacion")
+
+                landmark = self.find_landmark_in_map(associations[i])
+                r = self.xk_k[:2] #posicion del robot
+
+                #Calculo de las medidas predichas ŷk = xl - x^k
+                predicted_y = landmark.p - r 
+
+                #Calculo del error de innovacion 
+                #TODO: corregir desde aqui
+                innovation = measure.p - predicted_y
+                innovation_errors.append(innovation)
+
+            
+        """
+        Si por lo que sea en una iteracion no se detecta bien
+        un landmark ya conocido se supone que el error de innovacion
+        seria la diferencia entre la posicion del robot y la posicion
+        predicha del landmark no detectado?
+        Otra opcion seria poner una media de los errores de innovacion
+        detectados (se escoge esta)
+        """
+
+        aux = np.array(innovation_errors)
+        print(aux)
+        print("aux: ", np.shape(aux))
+        if len(innovation_errors) != len(measurements):
+            print("Len inn: ", len(innovation_errors))
+            print("len land: ", len(self.landmark_ids))
+            for i in range(np.abs(len(innovation_errors) - len(measurements))):
+                print("Necesito extra")
+                innovation = np.mean(aux, axis=0)
+                innovation_errors.append(innovation)
+
+        #Jacobiana
+        H = np.tile([[-1, 0], [0, -1]], (len(measurements), 1))
+        R = np.kron(np.eye(len(measurements)), self.R)
+        print("Landmarks: ", len(measurements))
+        print("H: ", np.shape(H))
+        print("self.Pk_k:", np.shape(self.Pk_k[:2,:2]))
+        print("self.R: ", np.shape(R))
+        S = H @ self.Pk_k[:2, :2] @ H.T + R
+        print("S: ", np.shape(S))
+        print("inv S: ", np.shape(np.linalg.inv(S)))
+        K = self.Pk_k[:2, :2] @ H.T @ np.linalg.inv(S)
+        print("K: ", np.shape(K))
+        print("innovation: ", innovation_errors)
+        print("innovation: ", np.shape(np.array(innovation_errors).flatten()))
+        print("xk_k: ", np.shape(self.xk_k[:2]))
+        self.xk_k[:2] = self.xk_k[:2] + K@(np.array(innovation_errors).flatten())
+        self.Pk_k[:2,:2] = self.Pk_k[:2,:2] - K@S@K.T
     """
     Agrega nuevos landmarks al mapa basándose en las mediciones
     actuales. Los añade con el mismo id del landmark detectado.
@@ -102,6 +162,10 @@ class KF:
     """
     def do_association(self, measurements):
         associations = []
+
+        if len(self.xk_k) < 3:
+            print("No hay landmarks")
+            return [None] * len(measurements)
         
         for measure in measurements:
             dists = []
@@ -122,11 +186,11 @@ class KF:
         
 
 # Initial estimates of the position of the error and its covariance matrix
-xHat = np.array([0, 0], np.float32)
+xHat = np.array([r.p[0], r.p[1]], np.float32)
 PHat = np.array([[0,0],[0,0]], np.float32) #la incertidumbre en la posicion inicial del robot es nula
 
 # Object for the (Extended) Kalman filter estimator
-kf = KF(xHat, PHat, Q,  R, m)
+kf = KF(xHat, PHat, Q,  0.01*R, m)
 
 # Plot the first step of the estimation process and pause
 e.plotSim(r, m, kf, True)
@@ -141,10 +205,10 @@ while r.t < r.tf:
     kf.predict(u)
     measurements = r.measure(m)
     associations = kf.do_association(measurements)
-    # print("Asociaciones: \n", associations)
-#     kf.update(y)
+    print("Asociaciones: \n", associations)
+    kf.update(measurements, associations)
 
     kf.add_landmarks(measurements, associations)
     
     e.plotSim(r, m, kf)
-    # time.sleep(3)
+    # time.sleep(2)
