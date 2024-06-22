@@ -45,9 +45,11 @@ class KF:
 
     def find_landmark_in_map(self, idx):
 
-        for landmark in self.xk_k[2:]:
+        for i, landmark in enumerate(self.landmark_ids):
             if landmark.id == idx: 
-                return landmark
+                return landmark, i
+            
+        return None, None
 
 
     def update(self, measurements, associations):
@@ -56,17 +58,16 @@ class KF:
 
         for i, measure in enumerate(measurements):
             if associations[i] is not None: 
-                print("Hay asociacion")
+                # print("Hay asociacion")
 
-                landmark = self.find_landmark_in_map(associations[i])
-                r = self.xk_k[:2] #posicion del robot
+                landmark, _ = self.find_landmark_in_map(associations[i])
+                robot_position = self.xk_k[:2] #posicion del robot
 
                 #Calculo de las medidas predichas ŷk = xl - x^k
-                predicted_y = landmark.p - r 
+                predicted_measurement= landmark.p - robot_position
 
                 #Calculo del error de innovacion 
-                #TODO: corregir desde aqui
-                innovation = measure.p - predicted_y
+                innovation = measure.p - predicted_measurement
                 innovation_errors.append(innovation)
 
             
@@ -80,33 +81,38 @@ class KF:
         """
 
         aux = np.array(innovation_errors)
-        print(aux)
-        print("aux: ", np.shape(aux))
+        # print(aux)
+        # print("aux: ", np.shape(aux))
         if len(innovation_errors) != len(measurements):
-            print("Len inn: ", len(innovation_errors))
-            print("len land: ", len(self.landmark_ids))
+            # print("Len inn: ", len(innovation_errors))
+            # print("len land: ", len(measurements))
             for i in range(np.abs(len(innovation_errors) - len(measurements))):
-                print("Necesito extra")
+                # print("Necesito extra")
+
+                if len(innovation_errors) == 0:
+                    innovation_errors.append([-0.30346058,  0.0260039 ])
+                    break
                 innovation = np.mean(aux, axis=0)
                 innovation_errors.append(innovation)
 
         #Jacobiana
-        H = np.tile([[-1, 0], [0, -1]], (len(measurements), 1))
+        H = np.tile([[-1, 0], [0, -1]], (len(measurements), 1 + len(self.landmark_ids)))
         R = np.kron(np.eye(len(measurements)), self.R)
-        print("Landmarks: ", len(measurements))
-        print("H: ", np.shape(H))
-        print("self.Pk_k:", np.shape(self.Pk_k[:2,:2]))
-        print("self.R: ", np.shape(R))
-        S = H @ self.Pk_k[:2, :2] @ H.T + R
-        print("S: ", np.shape(S))
-        print("inv S: ", np.shape(np.linalg.inv(S)))
-        K = self.Pk_k[:2, :2] @ H.T @ np.linalg.inv(S)
-        print("K: ", np.shape(K))
-        print("innovation: ", innovation_errors)
-        print("innovation: ", np.shape(np.array(innovation_errors).flatten()))
-        print("xk_k: ", np.shape(self.xk_k[:2]))
-        self.xk_k[:2] = self.xk_k[:2] + K@(np.array(innovation_errors).flatten())
-        self.Pk_k[:2,:2] = self.Pk_k[:2,:2] - K@S@K.T
+        # print("Measurements: ", len(measurements))
+        # print("H: ", np.shape(H))
+        # print("self.Pk_k:", np.shape(self.Pk_k))
+        # print("self.R: ", np.shape(R))
+        S = H @ self.Pk_k @ H.T + R
+        # print("S: ", np.shape(S))
+        K = self.Pk_k @ H.T @ np.linalg.inv(S)
+        # print("K: ", np.shape(K))
+        # print("Predicted x", self.xk_k[2:]) 
+        # print("landmarks ids: ", self.landmark_ids)
+        # print("innovation: ", innovation_errors)
+        # print("innovation: ", np.shape(np.array(innovation_errors).flatten()))
+        # print("xk_k: ", np.shape(self.xk_k))
+        self.xk_k = self.xk_k + K@(np.array(innovation_errors).flatten())
+        self.Pk_k = self.Pk_k - K@S@K.T
     """
     Agrega nuevos landmarks al mapa basándose en las mediciones
     actuales. Los añade con el mismo id del landmark detectado.
@@ -119,9 +125,8 @@ class KF:
 
                 #se añade un nuevo landmark
                 global_position = self.transform_to_global(measure)
-                new_landmark = Landmark(global_position, measure.id)
-                self.landmark_ids.append(measure.id)
-                self.xk_k = np.append(self.xk_k, new_landmark)    
+                self.landmark_ids.append(Landmark(global_position, measure.id))
+                self.xk_k = np.append(self.xk_k, global_position)    
 
                 #Añadir covarianza de las mediciones
                 #incertidumbre inicial de las landmarks debe ser inf
@@ -169,8 +174,8 @@ class KF:
         
         for measure in measurements:
             dists = []
-            for i in range(len(self.xk_k[2:])):
-                landmark = self.xk_k[2 + i]
+            for i in range(len(self.landmark_ids)):
+                landmark = self.landmark_ids[i]
                 dist = np.linalg.norm(landmark.p - self.transform_to_global(measure)) 
                 dists.append((dist, landmark.id))
         
@@ -187,10 +192,10 @@ class KF:
 
 # Initial estimates of the position of the error and its covariance matrix
 xHat = np.array([r.p[0], r.p[1]], np.float32)
-PHat = np.array([[0,0],[0,0]], np.float32) #la incertidumbre en la posicion inicial del robot es nula
+PHat = np.array([[3,0],[0,3]], np.float32) #la incertidumbre en la posicion inicial del robot es nula
 
 # Object for the (Extended) Kalman filter estimator
-kf = KF(xHat, PHat, Q,  0.01*R, m)
+kf = KF(xHat, PHat, Q,  R, m)
 
 # Plot the first step of the estimation process and pause
 e.plotSim(r, m, kf, True)

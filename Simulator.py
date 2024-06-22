@@ -6,6 +6,7 @@ import matplotlib.transforms as transforms
 # Landmark class to store a landmark position and its ID
 # This class overloads the operator == (__eq__) to be able
 # to compare Landmark objects according to their ID
+
 class Landmark:
     def __init__(self, p, id):
         self.p = p
@@ -128,6 +129,7 @@ class EnvPlot:
         self.ax.add_patch(c)
         self.ax.plot(r.p[0], r.p[1], '+', color='b')
         # Draw the objects perceived by the robot
+        print("R OBJS: ", r.objs)
         for l in r.objs:
             if r.type == 'xy':
                 p = r.p + l.p
@@ -136,6 +138,30 @@ class EnvPlot:
                                     l.p[0] * np.sin(l.p[1])], dtype=np.float32)
             self.ax.plot(p[0], p[1], marker='*', color='b')
             
+            landmark, landmark_index = kf.find_landmark_in_map(l.id)
+            print("LD: ", landmark_index)
+            if landmark_index is not None:
+                f = 3.0
+                S = kf.Pk_k[2 + 2 * landmark_index: 4 + 2 * landmark_index, 2 + 2 * landmark_index: 4 + 2 * landmark_index]
+                pearson = S[0, 1]/np.sqrt(S[0, 0] * S[1, 1])
+                # Using a special case to obtain the eigenvalues of this
+                # two-dimensionl dataset.
+                ell_radius_x = np.sqrt(1 + pearson)
+                ell_radius_y = np.sqrt(1 - pearson)
+                ellipse = Ellipse((0, 0), width=ell_radius_x * 2,
+                                height=ell_radius_y * 2, edgecolor='g',
+                                fc='none')
+                scale_x = np.sqrt(S[0, 0]) * f
+                scale_y = np.sqrt(S[1, 1]) * f
+
+                transf = transforms.Affine2D() \
+                                .rotate_deg(45) \
+                                .scale(scale_x, scale_y) \
+                                .translate(p[0], p[1])
+
+                ellipse.set_transform(transf + self.ax.transData)
+                self.ax.add_patch(ellipse)
+
         # Draw the estimate of the Kalman filter
         f = 3.0
         S = kf.Pk_k[0:3,0:3]
